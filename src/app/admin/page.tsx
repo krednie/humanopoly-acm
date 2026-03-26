@@ -43,6 +43,8 @@ export default function AdminPage() {
   // Assign owner panel
   const [ownerPropId, setOwnerPropId] = useState("");
   const [ownerTeamId, setOwnerTeamId] = useState("");
+  // Reset
+  const [resetConfirm, setResetConfirm] = useState(false);
   // Active tab
   const [tab, setTab] = useState<"approvals" | "properties" | "overrides" | "log">("approvals");
 
@@ -92,6 +94,14 @@ export default function AdminPage() {
 
   async function assignOwner() {
     await apiFetch("/api/admin/property", { propertyId: ownerPropId, teamId: ownerTeamId || null });
+  }
+
+  async function resetGame() {
+    const res = await fetch("/api/admin/reset", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error ?? "Reset failed", false); }
+    else { showToast("Game reset ✓"); fetchState(); }
+    setResetConfirm(false);
   }
 
   async function logout() { await fetch("/api/auth/logout", { method: "POST" }); router.push("/"); }
@@ -456,6 +466,40 @@ export default function AdminPage() {
               <button disabled={!ownerPropId} onClick={assignOwner} className="w-full bg-gradient-to-r from-sky-500 to-violet-600 hover:opacity-90 text-white font-semibold py-2.5 rounded-xl transition disabled:opacity-30">
                 Assign
               </button>
+            </div>
+
+            {/* Reset Game */}
+            <div className="lg:col-span-2 bg-[#111118] border border-red-500/20 rounded-2xl p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-sm text-red-400">🔄 Reset Game</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Wipes all game progress and re-seeds the database to starting state.</p>
+                </div>
+                {!resetConfirm ? (
+                  <button
+                    onClick={() => setResetConfirm(true)}
+                    className="bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 font-semibold text-sm px-5 py-2.5 rounded-xl transition whitespace-nowrap"
+                  >
+                    Reset Game
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-red-400 font-medium">Are you sure?</span>
+                    <button
+                      onClick={resetGame}
+                      className="bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30 font-semibold text-sm px-4 py-2 rounded-xl transition"
+                    >
+                      Yes, Reset
+                    </button>
+                    <button
+                      onClick={() => setResetConfirm(false)}
+                      className="bg-white/[0.06] border border-white/10 text-slate-400 hover:text-white font-semibold text-sm px-4 py-2 rounded-xl transition"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
