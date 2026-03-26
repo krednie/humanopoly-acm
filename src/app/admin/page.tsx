@@ -52,7 +52,7 @@ export default function AdminPage() {
   };
 
   const fetchState = useCallback(async () => {
-    const res = await fetch("/api/game/state");
+    const res = await fetch(`/api/game/state?t=${Date.now()}`);
     if (res.status === 401) { router.push("/"); return; }
     if (!res.ok) return;
     setGs(await res.json());
@@ -315,7 +315,7 @@ export default function AdminPage() {
                       {task && <p className="text-xs text-slate-400 mt-0.5">Task: {task.name}</p>}
                       <p className="text-sm mt-1">
                         <span className={`font-bold ${a.type === "task" ? "text-emerald-400" : "text-red-400"}`}>
-                          {a.type === "task" ? "+" : "-"}{formatMoney(a.amount)}
+                          {a.type === "task" ? "+ Earns Property" : `-${formatMoney(a.amount)}`}
                         </span>
                       </p>
                     </div>

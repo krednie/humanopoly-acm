@@ -8,9 +8,8 @@ export async function POST(req: NextRequest) {
   if (!session || session.role !== "admin") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
   const { propertyId, teamId } = await req.json();
-  const result = assignProperty(propertyId, teamId ?? null);
+  const result = await assignProperty(propertyId, teamId ?? null);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
   return NextResponse.json({ ok: true });
 }

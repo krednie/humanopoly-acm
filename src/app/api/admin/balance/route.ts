@@ -8,9 +8,8 @@ export async function POST(req: NextRequest) {
   if (!session || session.role !== "admin") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
   const { teamId, delta, reason } = await req.json();
-  const result = editBalance(teamId, Number(delta), reason ?? "Manual adjustment");
+  const result = await editBalance(teamId, Number(delta), reason);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
   return NextResponse.json({ ok: true });
 }

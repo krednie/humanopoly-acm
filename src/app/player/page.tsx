@@ -55,7 +55,7 @@ export default function PlayerPage() {
 
   const fetchState = useCallback(async () => {
     try {
-      const res = await fetch("/api/game/state");
+      const res = await fetch(`/api/game/state?t=${Date.now()}`);
       if (res.status === 401) { router.push("/"); return; }
       if (!res.ok) return;
       const data = await res.json();
@@ -226,15 +226,22 @@ export default function PlayerPage() {
                 )}
 
                 {/* Case B: Owned by other */}
-                {isOther && (
-                  <button
-                    disabled={actionLoading || hasPendingFor("rent", prop.propertyId) || team.balance < prop.rent}
-                    onClick={() => submitRequest("rent", prop.propertyId)}
-                    className="w-full bg-red-500/20 border border-red-500/30 text-red-300 hover:bg-red-500/30 font-semibold py-3 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {hasPendingFor("rent", prop.propertyId) ? "⏳ Rent Request Pending…" : team.balance < prop.rent ? "Insufficient balance" : `💸 Pay Rent ${formatMoney(prop.rent)}`}
-                  </button>
-                )}
+                {isOther && (() => {
+                  const hasPaidRent = transactions.some(
+                    (tx) => tx.type === "rent" && tx.propertyId === prop.propertyId && tx.timestamp >= push.pushedAt
+                  );
+                  return (
+                    <button
+                      disabled={hasPaidRent || actionLoading || hasPendingFor("rent", prop.propertyId) || team.balance < prop.rent}
+                      onClick={() => submitRequest("rent", prop.propertyId)}
+                      className={`w-full font-semibold py-3 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed ${
+                        hasPaidRent ? "bg-white/10 text-white/50 border border-white/10" : "bg-red-500/20 border border-red-500/30 text-red-300 hover:bg-red-500/30"
+                      }`}
+                    >
+                      {hasPaidRent ? "✅ Rent Paid" : hasPendingFor("rent", prop.propertyId) ? "⏳ Rent Request Pending…" : team.balance < prop.rent ? "Insufficient balance" : `💸 Pay Rent ${formatMoney(prop.rent)}`}
+                    </button>
+                  );
+                })()}
 
                 {/* Case C: Owned by self */}
                 {isOwn && (

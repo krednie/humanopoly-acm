@@ -11,10 +11,10 @@ export async function POST(req: NextRequest) {
 
   const { teamId, propertyId, clear } = await req.json();
   if (clear) {
-    clearPush(teamId);
+    await clearPush(teamId);
     return NextResponse.json({ ok: true });
   }
-  const result = pushProperty(teamId, propertyId);
+  const result = await pushProperty(teamId, propertyId);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
   return NextResponse.json({ ok: true });
 }

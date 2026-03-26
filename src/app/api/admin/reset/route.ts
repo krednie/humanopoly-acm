@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { decodeSession, COOKIE_NAME } from "@/lib/auth";
-import { processApproval } from "@/lib/gameState";
+import { seedDatabase } from "@/lib/gameState";
 
 export async function POST(req: NextRequest) {
   const cookieVal = req.cookies.get(COOKIE_NAME)?.value;
@@ -8,8 +8,6 @@ export async function POST(req: NextRequest) {
   if (!session || session.role !== "admin") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const { approvalId, decision } = await req.json();
-  const result = await processApproval(approvalId, decision);
-  if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
-  return NextResponse.json({ ok: true });
+  await seedDatabase();
+  return NextResponse.json({ ok: true, message: "Game reset and database seeded." });
 }
