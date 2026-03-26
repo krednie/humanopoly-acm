@@ -171,8 +171,9 @@ export async function pushProperty(teamId: string, propertyId: string): Promise<
 
   const taskId = prop[0].status === "vacant" ? await pickTask() : null;
 
-  await db.insert(currentPush).values({ teamId, propertyId, taskId, pushedAt: Date.now() })
-    .onConflictDoUpdate({ target: currentPush.teamId, set: { propertyId, taskId, pushedAt: Date.now() } });
+  const now = Math.floor(Date.now() / 1000);
+  await db.insert(currentPush).values({ teamId, propertyId, taskId, pushedAt: now })
+    .onConflictDoUpdate({ target: currentPush.teamId, set: { propertyId, taskId, pushedAt: now } });
   return { ok: true };
 }
 
@@ -215,7 +216,7 @@ export async function submitRequest(
   const id = uid();
   await db.insert(pendingApprovals).values({
     id, type, teamId, propertyId, taskId: taskId ?? null,
-    amount, status: "pending", timestamp: Date.now(),
+    amount, status: "pending", timestamp: Math.floor(Date.now() / 1000),
   });
   return { ok: true, id };
 }
@@ -243,7 +244,7 @@ export async function processApproval(
   if (!team || !prop) return { ok: false, error: "State inconsistency" };
 
   const txId = uid();
-  const now = Date.now();
+  const now = Math.floor(Date.now() / 1000);
 
   if (a.type === "task") {
     if (a.taskId != null) {
@@ -297,7 +298,7 @@ export async function editBalance(teamId: string, delta: number, reason: string)
   if (!team) return { ok: false, error: "Team not found" };
   await Promise.all([
     db.update(teamsState).set({ balance: team.balance + delta }).where(eq(teamsState.teamId, teamId)),
-    db.insert(transactions).values({ id: uid(), type: "manual", teamId, amount: delta, description: reason || "Manual adjustment", timestamp: Date.now() }),
+    db.insert(transactions).values({ id: uid(), type: "manual", teamId, amount: delta, description: reason || "Manual adjustment", timestamp: Math.floor(Date.now() / 1000) }),
   ]);
   return { ok: true };
 }
