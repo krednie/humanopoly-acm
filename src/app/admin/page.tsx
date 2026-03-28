@@ -1,13 +1,11 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
+import type { TeamState, PropertyState, PendingApproval, Transaction, Task } from "@/lib/types";
+import { useGamePoller } from "@/lib/useGamePoller";
 
-// ─── Types ────────────────────────────────────────────────────────────────
-interface TeamState { teamId: string; displayName: string; balance: number; ownedProperties: string[]; }
-interface PropertyState { propertyId: string; name: string; price: number; rent: number; owner: string | null; status: string; }
-interface PendingApproval { id: string; type: string; teamId: string; propertyId: string; taskId?: number; amount: number; timestamp: number; status: string; }
-interface Transaction { id: string; type: string; teamId: string; amount: number; description: string; timestamp: number; }
-interface Task { taskId: number; name: string; reward: number; }
+
+// ─── Admin-only shape ─────────────────────────────────────────────────────────
 interface GameState {
   teams: Record<string, TeamState>;
   properties: Record<string, PropertyState>;
@@ -17,6 +15,7 @@ interface GameState {
   taskUsage: Record<number, number>;
   tasks: Task[];
 }
+
 
 function formatMoney(n: number) { return `₮${n.toLocaleString()}`; }
 function timeAgo(ts: number) {
@@ -32,7 +31,8 @@ function typeBadge(type: string) {
 
 export default function AdminPage() {
   const router = useRouter();
-  const [gs, setGs] = useState<GameState | null>(null);
+  const { state: gs, refetch: fetchState } = useGamePoller<GameState>("/api/game/state");
+
   const [propertySearch, setPropertySearch] = useState("");
   const [pushTeam, setPushTeam] = useState("");
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
@@ -53,18 +53,6 @@ export default function AdminPage() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const fetchState = useCallback(async () => {
-    const res = await fetch(`/api/game/state?t=${Date.now()}`);
-    if (res.status === 401) { router.push("/"); return; }
-    if (!res.ok) return;
-    setGs(await res.json());
-  }, [router]);
-
-  useEffect(() => {
-    fetchState();
-    const iv = setInterval(fetchState, 3000);
-    return () => clearInterval(iv);
-  }, [fetchState]);
 
   async function apiFetch(url: string, body: object) {
     const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });

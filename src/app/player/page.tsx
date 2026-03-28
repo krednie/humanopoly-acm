@@ -1,36 +1,23 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { TeamState, PropertyState, Task, PendingApproval, Transaction } from "@/lib/types";
+import { useGamePoller } from "@/lib/useGamePoller";
 
-interface TeamData {
-  teamId: string;
-  displayName: string;
-  balance: number;
-  ownedProperties: string[];
-}
-interface PropertyData {
-  propertyId: string;
-  name: string;
-  price: number;
-  rent: number;
-  owner: string | null;
-  status: string;
-}
-interface TaskData { taskId: number; name: string; reward: number; }
-interface PushDetail { property: PropertyData; task: TaskData | null; pushedAt: number; }
-interface Approval { id: string; type: string; propertyId: string; amount: number; status: string; }
-interface Transaction { id: string; type: string; amount: number; description: string; timestamp: number; propertyId?: string; }
+// ─── Player-page-specific types ───────────────────────────────────────────────
+interface PushDetail { property: PropertyState; task: Task | null; pushedAt: number; }
 interface LeaderboardEntry { teamId: string; displayName: string; balance: number; netWorth: number; }
 
 interface PlayerState {
-  team: TeamData;
+  team: TeamState;
   push: PushDetail | null;
-  pendingApprovals: Approval[];
+  pendingApprovals: PendingApproval[];
   transactions: Transaction[];
   leaderboard: LeaderboardEntry[];
-  properties: Record<string, PropertyData>;
+  properties: Record<string, PropertyState>;
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatMoney(n: number) {
   return `₮${n.toLocaleString()}`;
 }
@@ -41,9 +28,139 @@ function timeAgo(ts: number) {
   return `${Math.floor(diff / 3600)}h ago`;
 }
 
+// ─── Sub-components (replaces IIFE-in-JSX antipattern) ───────────────────────
+
+interface VacantActionsProps {
+  prop: PropertyState;
+  task: Task;
+  team: TeamState;
+  taskOptionsOpen: boolean;
+  actionLoading: boolean;
+  hasPendingFor: (type: string, propId: string) => boolean;
+  onDoneTask: () => void;
+  onSubmit: (type: "task_money" | "task_property" | "buy" | "rent", propertyId: string, taskId?: number) => void;
+  onSkip: () => void;
+}
+
+function VacantPropertyActions({
+  prop, task, team, taskOptionsOpen, actionLoading,
+  hasPendingFor, onDoneTask, onSubmit, onSkip,
+}: VacantActionsProps) {
+  const isTaskPending =
+    hasPendingFor("task_money", prop.propertyId) ||
+    hasPendingFor("task_property", prop.propertyId);
+  const showTaskOptions = taskOptionsOpen || isTaskPending;
+
+  return (
+    <div className="bg-white/[0.04] rounded-xl p-4 space-y-3">
+      <div>
+        <p className="text-xs text-slate-500 mb-1">🎯 Your Task</p>
+        <p className="text-sm font-semibold text-white">{task.name}</p>
+        <p className="text-xs text-emerald-400 mt-0.5">+{formatMoney(prop.price)} reward</p>
+      </div>
+
+      {!showTaskOptions ? (
+        <div className="flex gap-2 flex-wrap">
+          <button
+            disabled={actionLoading}
+            onClick={onDoneTask}
+            className="flex-1 bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30 font-semibold text-sm py-2.5 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            ✅ Done Task
+          </button>
+          <button
+            disabled={actionLoading || hasPendingFor("buy", prop.propertyId) || team.balance < prop.price}
+            onClick={() => onSubmit("buy", prop.propertyId)}
+            className="flex-1 bg-sky-500/20 border border-sky-500/30 text-sky-300 hover:bg-sky-500/30 font-semibold text-sm py-2.5 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {hasPendingFor("buy", prop.propertyId) ? "⏳ Pending…" : team.balance < prop.price ? "No funds" : "🏠 Buy"}
+          </button>
+          <button
+            disabled={actionLoading}
+            onClick={onSkip}
+            className="bg-white/[0.06] border border-white/10 text-slate-400 hover:text-white hover:bg-white/10 font-semibold text-sm py-2.5 px-4 rounded-xl transition"
+          >
+            Skip
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2 w-full">
+            <button
+              disabled={actionLoading || isTaskPending}
+              onClick={() => onSubmit("task_money", prop.propertyId, task.taskId)}
+              className="flex-1 bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30 font-semibold text-sm py-2.5 px-2 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed leading-tight"
+            >
+              {hasPendingFor("task_money", prop.propertyId) ? "⏳ Pending…" : "💰 Keep Money"}
+            </button>
+            <button
+              disabled={actionLoading || isTaskPending}
+              onClick={() => onSubmit("task_property", prop.propertyId, task.taskId)}
+              className="flex-1 bg-violet-500/20 border border-violet-500/30 text-violet-300 hover:bg-violet-500/30 font-semibold text-sm py-2.5 px-2 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed leading-tight"
+            >
+              {hasPendingFor("task_property", prop.propertyId) ? "⏳ Pending…" : "🏠 Get Property"}
+            </button>
+          </div>
+          <div className="flex gap-2 w-full">
+            <button
+              disabled
+              className="flex-1 bg-sky-500/10 border border-sky-500/20 text-sky-300/50 font-semibold text-sm py-2.5 rounded-xl opacity-40 cursor-not-allowed"
+            >
+              🏠 Buy
+            </button>
+            <button
+              disabled
+              className="bg-white/[0.06] border border-white/10 text-slate-400/50 font-semibold text-sm py-2.5 px-4 rounded-xl w-1/3 opacity-40 cursor-not-allowed"
+            >
+              Skip
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface RentActionProps {
+  prop: PropertyState;
+  team: TeamState;
+  pushedAt: number;
+  transactions: Transaction[];
+  actionLoading: boolean;
+  hasPendingFor: (type: string, propId: string) => boolean;
+  onSubmit: (type: "rent", propertyId: string) => void;
+}
+
+function RentAction({ prop, team, pushedAt, transactions, actionLoading, hasPendingFor, onSubmit }: RentActionProps) {
+  // Timestamps are Unix seconds on both sides
+  const hasPaidRent = transactions.some(
+    (tx) => tx.type === "rent" && tx.propertyId === prop.propertyId && tx.timestamp >= pushedAt
+  );
+  return (
+    <button
+      disabled={hasPaidRent || actionLoading || hasPendingFor("rent", prop.propertyId) || team.balance < prop.rent}
+      onClick={() => onSubmit("rent", prop.propertyId)}
+      className={`w-full font-semibold py-3 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed ${
+        hasPaidRent
+          ? "bg-white/10 text-white/50 border border-white/10"
+          : "bg-red-500/20 border border-red-500/30 text-red-300 hover:bg-red-500/30"
+      }`}
+    >
+      {hasPaidRent
+        ? "✅ Rent Paid"
+        : hasPendingFor("rent", prop.propertyId)
+        ? "⏳ Rent Request Pending…"
+        : team.balance < prop.rent
+        ? "Insufficient balance"
+        : `💸 Pay Rent ${formatMoney(prop.rent)}`}
+    </button>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function PlayerPage() {
   const router = useRouter();
-  const [state, setState] = useState<PlayerState | null>(null);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -54,30 +171,20 @@ export default function PlayerPage() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const fetchState = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/game/state?t=${Date.now()}`);
-      if (res.status === 401) { router.push("/"); return; }
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data?.team) {
-        setState(data);
-        setLoading(false);
-      }
-    } catch { /* silent */ }
-  }, [router]);
+  const { state, refetch: fetchState } = useGamePoller<PlayerState>("/api/game/state", {
+    onFirstLoad: () => setLoading(false),
+  });
 
-  useEffect(() => {
-    fetchState();
-    const interval = setInterval(fetchState, 3000);
-    return () => clearInterval(interval);
-  }, [fetchState]);
-
+  // Reset task options when a new push arrives
   useEffect(() => {
     setTaskOptionsOpen(false);
   }, [state?.push?.pushedAt]);
 
-  async function submitRequest(type: "task_money" | "task_property" | "buy" | "rent", propertyId: string, taskId?: number) {
+  async function submitRequest(
+    type: "task_money" | "task_property" | "buy" | "rent",
+    propertyId: string,
+    taskId?: number
+  ) {
     setActionLoading(true);
     try {
       const res = await fetch("/api/game/request", {
@@ -90,6 +197,11 @@ export default function PlayerPage() {
       else { showToast("Request sent! Waiting for admin approval ✓"); fetchState(); }
     } catch { showToast("Network error", "error"); }
     setActionLoading(false);
+  }
+
+  async function skipTile() {
+    const res = await fetch("/api/game/skip", { method: "POST" });
+    if (res.ok) fetchState();
   }
 
   async function logout() {
@@ -120,8 +232,11 @@ export default function PlayerPage() {
 
       {/* Toast */}
       {toast && (
-        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-xl fade-in ${toast.type === "success" ? "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300" : "bg-red-500/20 border border-red-500/30 text-red-300"
-          }`}>
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-xl fade-in ${
+          toast.type === "success"
+            ? "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300"
+            : "bg-red-500/20 border border-red-500/30 text-red-300"
+        }`}>
           {toast.msg}
         </div>
       )}
@@ -160,21 +275,27 @@ export default function PlayerPage() {
           return (
             <div className="fade-in">
               <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-2">📍 You Landed On</p>
-              <div className={`rounded-2xl border p-5 space-y-4 ${isOther
+              <div className={`rounded-2xl border p-5 space-y-4 ${
+                isOther
                   ? "bg-red-500/[0.07] border-red-500/20 glow-red"
                   : isOwn
                     ? "bg-emerald-500/[0.07] border-emerald-500/20 glow-green"
                     : "bg-sky-500/[0.07] border-sky-500/20 glow-blue"
-                }`}>
+              }`}>
                 <div className="flex items-start justify-between">
                   <div>
                     <h2 className="text-xl font-bold">{prop.name}</h2>
                     <p className="text-sm text-slate-400 mt-0.5">
-                      {isOwn ? "You own this" : isOther ? `Owned by ${properties[prop.propertyId]?.owner ? leaderboard.find(l => l.teamId === prop.owner)?.displayName ?? prop.owner : "–"}` : "Vacant"}
+                      {isOwn
+                        ? "You own this"
+                        : isOther
+                        ? `Owned by ${leaderboard.find((l) => l.teamId === prop.owner)?.displayName ?? prop.owner}`
+                        : "Vacant"}
                     </p>
                   </div>
-                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${isOther ? "bg-red-500/20 text-red-300" : isOwn ? "bg-emerald-500/20 text-emerald-300" : "bg-sky-500/20 text-sky-300"
-                    }`}>
+                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
+                    isOther ? "bg-red-500/20 text-red-300" : isOwn ? "bg-emerald-500/20 text-emerald-300" : "bg-sky-500/20 text-sky-300"
+                  }`}>
                     {isOwn ? "Owned ✓" : isOther ? "Pay Rent" : "Vacant"}
                   </span>
                 </div>
@@ -190,100 +311,33 @@ export default function PlayerPage() {
                   </div>
                 </div>
 
-                {/* Case A: Vacant */}
-                {!prop.owner && task && (() => {
-                  const isTaskPending = hasPendingFor("task_money", prop.propertyId) || hasPendingFor("task_property", prop.propertyId);
-                  const showTaskOptions = taskOptionsOpen || isTaskPending;
-                  
-                  return (
-                    <div className="bg-white/[0.04] rounded-xl p-4 space-y-3">
-                      <div>
-                        <p className="text-xs text-slate-500 mb-1">🎯 Your Task</p>
-                        <p className="text-sm font-semibold text-white">{task.name}</p>
-                        <p className="text-xs text-emerald-400 mt-0.5">+{formatMoney(prop.price)} reward</p>
-                      </div>
-                      
-                      {!showTaskOptions ? (
-                        <div className="flex gap-2 flex-wrap">
-                          <button
-                            disabled={actionLoading}
-                            onClick={() => setTaskOptionsOpen(true)}
-                            className="flex-1 bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30 font-semibold text-sm py-2.5 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed"
-                          >
-                            ✅ Done Task
-                          </button>
-                          <button
-                            disabled={actionLoading || hasPendingFor("buy", prop.propertyId) || team.balance < prop.price}
-                            onClick={() => submitRequest("buy", prop.propertyId)}
-                            className="flex-1 bg-sky-500/20 border border-sky-500/30 text-sky-300 hover:bg-sky-500/30 font-semibold text-sm py-2.5 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed"
-                          >
-                            {hasPendingFor("buy", prop.propertyId) ? "⏳ Pending…" : team.balance < prop.price ? "No funds" : "🏠 Buy"}
-                          </button>
-                          <button
-                            disabled={actionLoading}
-                            onClick={async () => {
-                              const res = await fetch("/api/game/skip", { method: "POST" });
-                              if (res.ok) fetchState();
-                            }}
-                            className="bg-white/[0.06] border border-white/10 text-slate-400 hover:text-white hover:bg-white/10 font-semibold text-sm py-2.5 px-4 rounded-xl transition"
-                          >
-                            Skip
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col gap-2">
-                          <div className="flex gap-2 w-full">
-                            <button
-                              disabled={actionLoading || isTaskPending}
-                              onClick={() => submitRequest("task_money", prop.propertyId, task.taskId)}
-                              className="flex-1 bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30 font-semibold text-sm py-2.5 px-2 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed leading-tight"
-                            >
-                              {hasPendingFor("task_money", prop.propertyId) ? "⏳ Pending…" : "💰 Keep Money"}
-                            </button>
-                            <button
-                              disabled={actionLoading || isTaskPending}
-                              onClick={() => submitRequest("task_property", prop.propertyId, task.taskId)}
-                              className="flex-1 bg-violet-500/20 border border-violet-500/30 text-violet-300 hover:bg-violet-500/30 font-semibold text-sm py-2.5 px-2 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed leading-tight"
-                            >
-                              {hasPendingFor("task_property", prop.propertyId) ? "⏳ Pending…" : "🏠 Get Property"}
-                            </button>
-                          </div>
-                          <div className="flex gap-2 w-full">
-                            <button
-                              disabled={true}
-                              className="flex-1 bg-sky-500/10 border border-sky-500/20 text-sky-300/50 font-semibold text-sm py-2.5 rounded-xl transition opacity-40 cursor-not-allowed"
-                            >
-                              🏠 Buy
-                            </button>
-                            <button
-                              disabled={true}
-                              className="bg-white/[0.06] border border-white/10 text-slate-400/50 font-semibold text-sm py-2.5 px-4 rounded-xl transition w-1/3 opacity-40 cursor-not-allowed"
-                            >
-                              Skip
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
+                {/* Case A: Vacant with task */}
+                {!prop.owner && task && (
+                  <VacantPropertyActions
+                    prop={prop}
+                    task={task}
+                    team={team}
+                    taskOptionsOpen={taskOptionsOpen}
+                    actionLoading={actionLoading}
+                    hasPendingFor={hasPendingFor}
+                    onDoneTask={() => setTaskOptionsOpen(true)}
+                    onSubmit={submitRequest}
+                    onSkip={skipTile}
+                  />
+                )}
 
-                {/* Case B: Owned by other */}
-                {isOther && (() => {
-                  const hasPaidRent = transactions.some(
-                    (tx) => tx.type === "rent" && tx.propertyId === prop.propertyId && tx.timestamp >= push.pushedAt
-                  );
-                  return (
-                    <button
-                      disabled={hasPaidRent || actionLoading || hasPendingFor("rent", prop.propertyId) || team.balance < prop.rent}
-                      onClick={() => submitRequest("rent", prop.propertyId)}
-                      className={`w-full font-semibold py-3 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed ${hasPaidRent ? "bg-white/10 text-white/50 border border-white/10" : "bg-red-500/20 border border-red-500/30 text-red-300 hover:bg-red-500/30"
-                        }`}
-                    >
-                      {hasPaidRent ? "✅ Rent Paid" : hasPendingFor("rent", prop.propertyId) ? "⏳ Rent Request Pending…" : team.balance < prop.rent ? "Insufficient balance" : `💸 Pay Rent ${formatMoney(prop.rent)}`}
-                    </button>
-                  );
-                })()}
+                {/* Case B: Owned by another team */}
+                {isOther && (
+                  <RentAction
+                    prop={prop}
+                    team={team}
+                    pushedAt={push.pushedAt}
+                    transactions={transactions}
+                    actionLoading={actionLoading}
+                    hasPendingFor={hasPendingFor}
+                    onSubmit={submitRequest}
+                  />
+                )}
 
                 {/* Case C: Owned by self */}
                 {isOwn && (
@@ -358,7 +412,10 @@ export default function PlayerPage() {
           <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-2">🏆 Leaderboard</p>
           <div className="bg-[#111118] border border-white/[0.06] rounded-2xl overflow-hidden">
             {leaderboard.map((entry, i) => (
-              <div key={entry.teamId} className={`px-4 py-3 flex items-center gap-3 ${entry.teamId === team.teamId ? "bg-sky-500/10" : ""} ${i < leaderboard.length - 1 ? "border-b border-white/[0.04]" : ""}`}>
+              <div
+                key={entry.teamId}
+                className={`px-4 py-3 flex items-center gap-3 ${entry.teamId === team.teamId ? "bg-sky-500/10" : ""} ${i < leaderboard.length - 1 ? "border-b border-white/[0.04]" : ""}`}
+              >
                 <span className={`text-sm font-bold w-6 text-center ${i === 0 ? "text-yellow-400" : i === 1 ? "text-slate-300" : i === 2 ? "text-amber-600" : "text-slate-500"}`}>
                   {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`}
                 </span>

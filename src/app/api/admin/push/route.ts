@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { decodeSession, COOKIE_NAME } from "@/lib/auth";
+import { requireSession } from "@/lib/apiAuth";
 import { pushProperty, clearPush } from "@/lib/gameState";
 
 export async function POST(req: NextRequest) {
-  const cookieVal = req.cookies.get(COOKIE_NAME)?.value;
-  const session = cookieVal ? decodeSession(cookieVal) : null;
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const session = requireSession(req, "admin");
+  if (session instanceof NextResponse) return session;
 
   const { teamId, propertyId, clear } = await req.json();
   if (clear) {

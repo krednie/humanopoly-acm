@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { decodeSession, COOKIE_NAME } from "@/lib/auth";
+import { requireSession } from "@/lib/apiAuth";
 import { assignProperty } from "@/lib/gameState";
 
 export async function POST(req: NextRequest) {
-  const cookieVal = req.cookies.get(COOKIE_NAME)?.value;
-  const session = cookieVal ? decodeSession(cookieVal) : null;
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const session = requireSession(req, "admin");
+  if (session instanceof NextResponse) return session;
+
   const { propertyId, teamId } = await req.json();
   const result = await assignProperty(propertyId, teamId ?? null);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });

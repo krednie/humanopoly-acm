@@ -12,31 +12,16 @@ import { eq, and, asc, desc } from "drizzle-orm";
 import { CREDENTIALS } from "./data/credentials";
 import { PROPERTIES } from "./data/properties";
 import { TASKS } from "./data/tasks";
+import type {
+  PropertyStatus, ApprovalType,
+  PropertyState, TeamState, CurrentPush,
+  PendingApproval, Transaction,
+} from "./types";
 
-// ─── Types (same public shape as before) ─────────────────────────────────────
+export type { PropertyStatus, ApprovalType, PropertyState, TeamState, CurrentPush, PendingApproval, Transaction };
 
-export type PropertyStatus = "vacant" | "owned" | "locked";
-export type ApprovalType = "task_money" | "task_property" | "buy" | "rent";
-export type ApprovalStatus = "pending" | "approved" | "rejected";
-
-export interface PropertyState {
-  propertyId: string; name: string; price: number; rent: number;
-  owner: string | null; status: string;
-}
-export interface TeamState {
-  teamId: string; displayName: string; balance: number; ownedProperties: string[];
-}
-export interface CurrentPush {
-  propertyId: string; taskId: number | null; pushedAt: number;
-}
-export interface PendingApproval {
-  id: string; type: string; teamId: string; propertyId: string;
-  taskId?: number | null; amount: number; timestamp: number; status: string;
-}
-export interface Transaction {
-  id: string; type: string; teamId: string; amount: number;
-  propertyId?: string | null; description: string; timestamp: number;
-}
+// ─── Re-exported from @/lib/types ────────────────────────────────────────────
+export type { ApprovalStatus } from "./types";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -52,6 +37,7 @@ async function pickTask(): Promise<number | null> {
 // ─── Seed / Reset ─────────────────────────────────────────────────────────────
 
 export async function seedDatabase(): Promise<void> {
+  _seeded = false; // reset flag so ensureSeeded re-validates after this
   await db.delete(transactions);
   await db.delete(pendingApprovals);
   await db.delete(currentPush);
@@ -78,9 +64,14 @@ export async function seedDatabase(): Promise<void> {
   }
 }
 
+// Module-level flag — avoids a DB round-trip on every poll after first seed
+let _seeded = false;
+
 export async function ensureSeeded(): Promise<void> {
+  if (_seeded) return;
   const existing = await db.select().from(teamsState).limit(1);
   if (existing.length === 0) await seedDatabase();
+  _seeded = true;
 }
 
 // ─── Read: Admin state ────────────────────────────────────────────────────────
@@ -236,10 +227,18 @@ export async function processApproval(
   if (!a) return { ok: false, error: "Approval not found" };
   if (a.status !== "pending") return { ok: false, error: "Already processed" };
 
-  const newStatus = decision === "approve" ? "approved" : "rejected";
-  await db.update(pendingApprovals).set({ status: newStatus }).where(eq(pendingApprovals.id, approvalId));
+  // Reject: write immediately and return
+  if (decision !== "approve") {
+    await db.update(pendingApprovals).set({ status: "rejected" }).where(eq(pendingApprovals.id, approvalId));
+    return { ok: true };
+  }
 
-  if (decision !== "approve") return { ok: true };
+  // Task approvals: no balance risk, write approved immediately
+  if (a.type === "task_property" || a.type === "task_money") {
+    await db.update(pendingApprovals).set({ status: "approved" }).where(eq(pendingApprovals.id, approvalId));
+  }
+  // buy/rent: status will be written per-branch AFTER balance validation to avoid a brief approved→rejected state
+
 
   const [teamRows, propRows] = await Promise.all([
     db.select().from(teamsState).where(eq(teamsState.teamId, a.teamId)).limit(1),
@@ -276,10 +275,12 @@ export async function processApproval(
     }
 
   } else if (a.type === "buy") {
+    // Validate balance BEFORE writing the approved status
     if (team.balance < a.amount) {
       await db.update(pendingApprovals).set({ status: "rejected" }).where(eq(pendingApprovals.id, approvalId));
       return { ok: false, error: "Insufficient balance at time of approval" };
     }
+    await db.update(pendingApprovals).set({ status: "approved" }).where(eq(pendingApprovals.id, approvalId));
     const newOwned = [...((team.ownedProperties as string[]) ?? []), a.propertyId];
     await Promise.all([
       db.update(teamsState).set({ balance: team.balance - a.amount, ownedProperties: newOwned }).where(eq(teamsState.teamId, a.teamId)),
@@ -288,6 +289,7 @@ export async function processApproval(
     ]);
 
   } else if (a.type === "rent") {
+    // Validate balance BEFORE writing the approved status
     if (team.balance < a.amount) {
       await db.update(pendingApprovals).set({ status: "rejected" }).where(eq(pendingApprovals.id, approvalId));
       return { ok: false, error: "Insufficient balance at time of approval" };
@@ -296,6 +298,7 @@ export async function processApproval(
     const ownerRows = await db.select().from(teamsState).where(eq(teamsState.teamId, prop.owner)).limit(1);
     const owner = ownerRows[0];
     if (!owner) return { ok: false, error: "Owner not found" };
+    await db.update(pendingApprovals).set({ status: "approved" }).where(eq(pendingApprovals.id, approvalId));
     await Promise.all([
       db.update(teamsState).set({ balance: team.balance - a.amount }).where(eq(teamsState.teamId, a.teamId)),
       db.update(teamsState).set({ balance: owner.balance + a.amount }).where(eq(teamsState.teamId, prop.owner)),
