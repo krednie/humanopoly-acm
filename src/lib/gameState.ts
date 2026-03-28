@@ -220,6 +220,9 @@ export async function submitRequest(
     id, type, teamId, propertyId, taskId: taskId ?? null,
     amount, status: "pending", timestamp: Math.floor(Date.now() / 1000),
   });
+  
+  await clearPush(teamId);
+
   return { ok: true, id };
 }
 
