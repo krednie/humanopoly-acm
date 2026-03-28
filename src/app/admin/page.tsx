@@ -26,7 +26,7 @@ function timeAgo(ts: number) {
   return `${Math.floor(diff / 3600)}h ago`;
 }
 function typeBadge(type: string) {
-  const map: Record<string, string> = { task: "bg-emerald-500/20 text-emerald-300", buy: "bg-sky-500/20 text-sky-300", rent: "bg-red-500/20 text-red-300" };
+  const map: Record<string, string> = { task_money: "bg-emerald-500/20 text-emerald-300", task_property: "bg-violet-500/20 text-violet-300", buy: "bg-sky-500/20 text-sky-300", rent: "bg-red-500/20 text-red-300" };
   return map[type] ?? "bg-white/10 text-white";
 }
 
@@ -322,8 +322,8 @@ export default function AdminPage() {
                       <p className="font-semibold">{team?.displayName ?? a.teamId} — {prop?.name ?? a.propertyId}</p>
                       {task && <p className="text-xs text-slate-400 mt-0.5">Task: {task.name}</p>}
                       <p className="text-sm mt-1">
-                        <span className={`font-bold ${a.type === "task" ? "text-emerald-400" : "text-red-400"}`}>
-                          {a.type === "task" ? "+ Earns Property" : `-${formatMoney(a.amount)}`}
+                        <span className={`font-bold ${a.type.startsWith("task") ? "text-emerald-400" : "text-red-400"}`}>
+                          {a.type === "task_property" ? "+ Earns Property" : a.type === "task_money" ? `+ ${formatMoney(a.amount)}` : `-${formatMoney(a.amount)}`}
                         </span>
                       </p>
                     </div>

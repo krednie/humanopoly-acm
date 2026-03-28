@@ -212,8 +212,7 @@ export async function submitRequest(
     if (prop.owner === teamId) return { ok: false, error: "You own this property" };
     if (!prop.owner) return { ok: false, error: "Property has no owner" };
   } else if (type === "task_money") {
-    const task = taskId != null ? TASKS.find(t => t.taskId === taskId) : null;
-    amount = task?.reward ?? 10;
+    amount = prop.price;
   }
 
   const id = uid();
