@@ -12,9 +12,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap"
+          rel="stylesheet"
+        />
       </head>
-      <body className="bg-[#0a0a0f] text-white font-sans antialiased min-h-screen">
+      <body className="bg-dotted text-[#2d3436] antialiased min-h-screen">
         {children}
       </body>
     </html>
