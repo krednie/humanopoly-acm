@@ -295,9 +295,11 @@ export default function PlayerPage() {
             </div>
           );
         })() : (
-          <div className="bg-[#111118] border border-white/[0.06] rounded-2xl p-6 text-center">
-            <p className="text-3xl mb-2">🎲</p>
-            <p className="text-slate-400 text-sm">Waiting for admin to assign your tile…</p>
+          <div className="flex items-center justify-center min-h-[300px]">
+            <div className="bg-[#18181c] border border-white/[0.12] rounded-2xl p-8 text-center shadow-xl mx-auto" style={{ minWidth: 320, maxWidth: 400 }}>
+              <p className="text-3xl mb-2">🎲</p>
+              <p className="text-slate-200 text-base font-semibold">Waiting for admin to assign your tile…</p>
+            </div>
           </div>
         )}
 
