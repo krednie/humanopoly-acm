@@ -136,9 +136,8 @@ export default function AdminPage() {
 
       {/* Toast */}
       {toast && (
-        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-xl fade-in ${
-          toast.ok ? "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300" : "bg-red-500/20 border border-red-500/30 text-red-300"
-        }`}>
+        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-xl fade-in ${toast.ok ? "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300" : "bg-red-500/20 border border-red-500/30 text-red-300"
+          }`}>
           {toast.msg}
         </div>
       )}
@@ -292,9 +291,8 @@ export default function AdminPage() {
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition ${
-                tab === t ? "bg-sky-500/20 text-sky-300 border border-sky-500/30" : "text-slate-500 hover:text-white hover:bg-white/[0.05]"
-              }`}
+              className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition ${tab === t ? "bg-sky-500/20 text-sky-300 border border-sky-500/30" : "text-slate-500 hover:text-white hover:bg-white/[0.05]"
+                }`}
             >
               {t === "approvals" && pendingApprovals.length > 0 ? `Approvals (${pendingApprovals.length})` : t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
@@ -400,11 +398,10 @@ export default function AdminPage() {
                           )}
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                            p.status === "owned" ? "bg-emerald-500/20 text-emerald-300" :
-                            p.status === "locked" ? "bg-amber-500/20 text-amber-300" :
-                            "bg-slate-500/20 text-slate-400"
-                          }`}>{p.status}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${p.status === "owned" ? "bg-emerald-500/20 text-emerald-300" :
+                              p.status === "locked" ? "bg-amber-500/20 text-amber-300" :
+                                "bg-slate-500/20 text-slate-400"
+                            }`}>{p.status}</span>
                         </td>
                         <td className="px-4 py-3">
                           {pushedTeams.length > 0 ? (

@@ -16,7 +16,7 @@ import { TASKS } from "./data/tasks";
 // ─── Types (same public shape as before) ─────────────────────────────────────
 
 export type PropertyStatus = "vacant" | "owned" | "locked";
-export type ApprovalType = "task" | "buy" | "rent";
+export type ApprovalType = "task_money" | "task_property" | "buy" | "rent";
 export type ApprovalStatus = "pending" | "approved" | "rejected";
 
 export interface PropertyState {
@@ -211,6 +211,9 @@ export async function submitRequest(
     if (team.balance < prop.rent) return { ok: false, error: "Insufficient balance" };
     if (prop.owner === teamId) return { ok: false, error: "You own this property" };
     if (!prop.owner) return { ok: false, error: "Property has no owner" };
+  } else if (type === "task_money") {
+    const task = taskId != null ? TASKS.find(t => t.taskId === taskId) : null;
+    amount = task?.reward ?? 10;
   }
 
   const id = uid();
@@ -246,17 +249,29 @@ export async function processApproval(
   const txId = uid();
   const now = Math.floor(Date.now() / 1000);
 
-  if (a.type === "task") {
+  if (a.type === "task_property" || a.type === "task_money") {
     if (a.taskId != null) {
       const usageRow = await db.select().from(taskUsage).where(eq(taskUsage.taskId, a.taskId)).limit(1);
-      await db.update(taskUsage).set({ uses: (usageRow[0]?.uses ?? 0) + 1 }).where(eq(taskUsage.taskId, a.taskId));
+      if (usageRow.length === 0) {
+        await db.insert(taskUsage).values({ taskId: a.taskId, uses: 1 });
+      } else {
+        await db.update(taskUsage).set({ uses: (usageRow[0]?.uses ?? 0) + 1 }).where(eq(taskUsage.taskId, a.taskId));
+      }
     }
-    const newOwned = [...((team.ownedProperties as string[]) ?? []), a.propertyId];
-    await Promise.all([
-      db.update(teamsState).set({ ownedProperties: newOwned }).where(eq(teamsState.teamId, a.teamId)),
-      db.update(propertiesState).set({ owner: a.teamId, status: "owned" }).where(eq(propertiesState.propertyId, a.propertyId)),
-      db.insert(transactions).values({ id: txId, type: "reward", teamId: a.teamId, amount: 0, propertyId: a.propertyId, description: `Task completed on ${prop.name} (Earned property)`, timestamp: now }),
-    ]);
+    
+    if (a.type === "task_property") {
+      const newOwned = [...((team.ownedProperties as string[]) ?? []), a.propertyId];
+      await Promise.all([
+        db.update(teamsState).set({ ownedProperties: newOwned }).where(eq(teamsState.teamId, a.teamId)),
+        db.update(propertiesState).set({ owner: a.teamId, status: "owned" }).where(eq(propertiesState.propertyId, a.propertyId)),
+        db.insert(transactions).values({ id: txId, type: "reward", teamId: a.teamId, amount: 0, propertyId: a.propertyId, description: `Task completed on ${prop.name} (Earned property)`, timestamp: now }),
+      ]);
+    } else {
+      await Promise.all([
+        db.update(teamsState).set({ balance: team.balance + a.amount }).where(eq(teamsState.teamId, a.teamId)),
+        db.insert(transactions).values({ id: txId, type: "reward", teamId: a.teamId, amount: a.amount, propertyId: a.propertyId, description: `Task completed on ${prop.name} (Earned money)`, timestamp: now }),
+      ]);
+    }
 
   } else if (a.type === "buy") {
     if (team.balance < a.amount) {

@@ -71,4 +71,20 @@ export const CREDENTIALS: Credential[] = [
     role: "admin",
     startingBalance: 0,
   },
+  {
+    teamId: "admin",
+    username: "admin",
+    password: "admin123",
+    displayName: "Game Master",
+    role: "admin",
+    startingBalance: 0,
+  },
+  {
+    teamId: "admin",
+    username: "admin",
+    password: "admin123",
+    displayName: "Game Master",
+    role: "admin",
+    startingBalance: 0,
+  },
 ];
