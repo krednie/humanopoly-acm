@@ -3,7 +3,7 @@ import { CREDENTIALS, Credential } from "./data/credentials";
 export interface Session {
   teamId: string;
   displayName: string;
-  role: "player" | "admin";
+  role: "player" | "admin" | "superadmin";
 }
 
 const COOKIE_NAME = "humanopoly_session";

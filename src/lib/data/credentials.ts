@@ -9,7 +9,7 @@ export interface Credential {
   username: string;
   password: string;
   displayName: string;
-  role: "player" | "admin";
+  role: "player" | "admin" | "superadmin";
   startingBalance: number;
 }
 
@@ -64,29 +64,63 @@ export const CREDENTIALS: Credential[] = [
     startingBalance: 1500,
   },
 
-  // ── 3 Admins ──
+  // ── 6 Team Admins (each assigned to a team by super admin) ──
   {
-    teamId: "admin",
+    teamId: "admin1",
     username: "admin1",
     password: process.env.ADMIN1_PASSWORD!,
-    displayName: "Game Master 1",
+    displayName: "Admin 1",
     role: "admin",
     startingBalance: 0,
   },
   {
-    teamId: "admin",
+    teamId: "admin2",
     username: "admin2",
     password: process.env.ADMIN2_PASSWORD!,
-    displayName: "Game Master 2",
+    displayName: "Admin 2",
     role: "admin",
     startingBalance: 0,
   },
   {
-    teamId: "admin",
+    teamId: "admin3",
     username: "admin3",
     password: process.env.ADMIN3_PASSWORD!,
-    displayName: "Game Master 3",
+    displayName: "Admin 3",
     role: "admin",
+    startingBalance: 0,
+  },
+  {
+    teamId: "admin4",
+    username: "admin4",
+    password: process.env.ADMIN4_PASSWORD!,
+    displayName: "Admin 4",
+    role: "admin",
+    startingBalance: 0,
+  },
+  {
+    teamId: "admin5",
+    username: "admin5",
+    password: process.env.ADMIN5_PASSWORD!,
+    displayName: "Admin 5",
+    role: "admin",
+    startingBalance: 0,
+  },
+  {
+    teamId: "admin6",
+    username: "admin6",
+    password: process.env.ADMIN6_PASSWORD!,
+    displayName: "Admin 6",
+    role: "admin",
+    startingBalance: 0,
+  },
+
+  // ── Super Admin ──
+  {
+    teamId: "superadmin",
+    username: "superadmin",
+    password: process.env.SUPERADMIN_PASSWORD!,
+    displayName: "Game Master",
+    role: "superadmin",
     startingBalance: 0,
   },
 ];

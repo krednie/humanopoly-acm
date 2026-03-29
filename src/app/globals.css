@@ -59,3 +59,8 @@ body {
   transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
 }
+
+/* Hide NextJS Dev Overlays */
+nextjs-portal, [data-nextjs-toast] {
+  display: none !important;
+}

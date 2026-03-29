@@ -13,9 +13,12 @@ export default function proxy(req: NextRequest) {
   if (pathname.startsWith("/admin") && session?.role !== "admin")
     return NextResponse.redirect(new URL("/", req.url));
 
+  if (pathname.startsWith("/superadmin") && session?.role !== "superadmin")
+    return NextResponse.redirect(new URL("/", req.url));
+
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/player/:path*", "/admin/:path*"],
+  matcher: ["/player/:path*", "/admin/:path*", "/superadmin/:path*"],
 };

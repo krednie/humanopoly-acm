@@ -6,7 +6,7 @@
 import { db } from "@/db";
 import {
   teamsState, propertiesState, currentPush,
-  pendingApprovals, transactions, taskUsage,
+  pendingApprovals, transactions, taskUsage, adminAssignments,
 } from "@/db/schema";
 import { eq, and, asc, desc } from "drizzle-orm";
 import { CREDENTIALS } from "./data/credentials";
@@ -42,6 +42,7 @@ async function pickTask(): Promise<number | null> {
 
 export async function seedDatabase(): Promise<void> {
   _seeded = false;
+  await db.delete(adminAssignments);
   await db.delete(transactions);
   await db.delete(pendingApprovals);
   await db.delete(currentPush);
@@ -81,12 +82,13 @@ export async function ensureSeeded(): Promise<void> {
 
 export async function getAdminState() {
   await ensureSeeded();
-  const [teams, properties, pushes, approvals, txs] = await Promise.all([
+  const [teams, properties, pushes, approvals, txs, assignments] = await Promise.all([
     db.select().from(teamsState),
     db.select().from(propertiesState),
     db.select().from(currentPush),
     db.select().from(pendingApprovals).orderBy(desc(pendingApprovals.createdAt)).limit(200),
     db.select().from(transactions).orderBy(desc(transactions.createdAt)).limit(200),
+    db.select().from(adminAssignments),
   ]);
 
   const propertiesRecord: Record<string, PropertyState> = {};
@@ -102,6 +104,59 @@ export async function getAdminState() {
 
   const pushRecord: Record<string, CurrentPush | null> = {};
   for (const teamId of Object.keys(teamsRecord)) pushRecord[teamId] = null;
+  for (const push of pushes) {
+    pushRecord[push.teamId] = {
+      propertyId: push.propertyId,
+      taskId: push.taskId,
+      pushedAt: push.pushedAt.toISOString(),
+    };
+  }
+
+  const adminAssignmentsRecord: Record<string, string> = {};
+  for (const a of assignments) adminAssignmentsRecord[a.adminId] = a.teamId;
+
+  return {
+    teams: teamsRecord,
+    properties: propertiesRecord,
+    currentPush: pushRecord,
+    pendingApprovals: approvals.map((a) => ({
+      ...a,
+      createdAt: a.createdAt.toISOString(),
+    })) as PendingApproval[],
+    transactions: txs.map((tx) => ({
+      ...tx,
+      createdAt: tx.createdAt.toISOString(),
+    })) as Transaction[],
+    tasks: TASKS,
+    adminAssignments: adminAssignmentsRecord,
+  };
+}
+
+// ─── Read: Team Admin state ───────────────────────────────────────────────────
+
+export async function getTeamAdminState(teamId: string) {
+  await ensureSeeded();
+  const [teams, properties, pushes, approvals, txs] = await Promise.all([
+    db.select().from(teamsState),
+    db.select().from(propertiesState),
+    db.select().from(currentPush).where(eq(currentPush.teamId, teamId)),
+    db.select().from(pendingApprovals).where(eq(pendingApprovals.teamId, teamId)).orderBy(desc(pendingApprovals.createdAt)).limit(200),
+    db.select().from(transactions).where(eq(transactions.teamId, teamId)).orderBy(desc(transactions.createdAt)).limit(200),
+  ]);
+
+  const propertiesRecord: Record<string, PropertyState> = {};
+  for (const p of properties) propertiesRecord[p.propertyId] = p as PropertyState;
+
+  const teamsRecord: Record<string, TeamState & { ownedProperties: string[] }> = {};
+  for (const t of teams) {
+    teamsRecord[t.teamId] = {
+      ...t,
+      ownedProperties: deriveOwnedProperties(propertiesRecord, t.teamId),
+    };
+  }
+
+  const pushRecord: Record<string, CurrentPush | null> = {};
+  for (const tId of Object.keys(teamsRecord)) pushRecord[tId] = null;
   for (const push of pushes) {
     pushRecord[push.teamId] = {
       propertyId: push.propertyId,
@@ -178,6 +233,24 @@ export async function getPlayerState(teamId: string) {
     leaderboard,
     properties: propertiesRecord,
   };
+}
+
+// ─── Admin Assignments ────────────────────────────────────────────────────────
+
+export async function getAdminAssignment(adminId: string): Promise<string | null> {
+  await ensureSeeded();
+  const res = await db.select().from(adminAssignments).where(eq(adminAssignments.adminId, adminId)).limit(1);
+  return res[0]?.teamId ?? null;
+}
+
+export async function setAdminAssignment(adminId: string, teamId: string | null): Promise<void> {
+  await ensureSeeded();
+  if (teamId) {
+    await db.insert(adminAssignments).values({ adminId, teamId })
+      .onConflictDoUpdate({ target: adminAssignments.adminId, set: { teamId } });
+  } else {
+    await db.delete(adminAssignments).where(eq(adminAssignments.adminId, adminId));
+  }
 }
 
 // ─── Admin: Push property ─────────────────────────────────────────────────────

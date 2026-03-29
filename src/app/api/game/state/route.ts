@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { decodeSession, COOKIE_NAME } from "@/lib/auth";
-import { getAdminState, getPlayerState } from "@/lib/gameState";
+import { getAdminState, getTeamAdminState, getPlayerState, getAdminAssignment } from "@/lib/gameState";
 
 export const dynamic = "force-dynamic";
 
@@ -9,9 +9,16 @@ export async function GET(req: NextRequest) {
   const session = cookieVal ? decodeSession(cookieVal) : null;
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  if (session.role === "admin") {
+  if (session.role === "superadmin") {
     const state = await getAdminState();
     return NextResponse.json(state);
+  }
+
+  if (session.role === "admin") {
+    const assignedTeam = await getAdminAssignment(session.teamId);
+    if (!assignedTeam) return NextResponse.json({ notAssigned: true });
+    const state = await getTeamAdminState(assignedTeam);
+    return NextResponse.json({ ...state, myAssignedTeam: assignedTeam });
   }
 
   const state = await getPlayerState(session.teamId);

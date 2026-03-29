@@ -3,7 +3,8 @@ import { requireSession } from "@/lib/apiAuth";
 import { seedDatabase } from "@/lib/gameState";
 
 export async function POST(req: NextRequest) {
-  const session = requireSession(req, "admin");
+  // Only superadmin can reset game
+  const session = requireSession(req, "superadmin");
   if (session instanceof NextResponse) return session;
 
   await seedDatabase();

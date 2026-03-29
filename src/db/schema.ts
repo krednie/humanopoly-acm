@@ -78,3 +78,11 @@ export const taskUsage = pgTable("task_usage", {
   taskId: integer("task_id").primaryKey(),
   uses: integer("uses").notNull().default(0),
 });
+
+// ─── Admin Assignments ────────────────────────────────────────────────────────
+
+export const adminAssignments = pgTable("admin_assignments", {
+  adminId: text("admin_id").primaryKey(),
+  teamId: text("team_id").notNull().references(() => teamsState.teamId),
+  assignedAt: timestamp("assigned_at").defaultNow().notNull(),
+});

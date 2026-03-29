@@ -22,7 +22,9 @@ export default function LoginPage() {
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "Login failed"); setLoading(false); return; }
-      router.push(data.role === "admin" ? "/admin" : "/player");
+      if (data.role === "superadmin") router.push("/superadmin");
+      else if (data.role === "admin") router.push("/admin");
+      else router.push("/player");
     } catch {
       setError("Network error");
       setLoading(false);

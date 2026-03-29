@@ -46,6 +46,7 @@ interface GameState {
   transactions: Transaction[];
   taskUsage: Record<number, number>;
   tasks: Task[];
+  adminAssignments: Record<string, string>;
 }
 
 function formatMoney(n: number) { return `₮${n.toLocaleString()}`; }
@@ -72,9 +73,11 @@ export default function AdminPage() {
   const { state: gs, refetch: fetchState } = useGamePoller<GameState>("/api/game/state");
 
   const [propertySearch, setPropertySearch] = useState("");
+  const [pushTeam, setPushTeam] = useState("");
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   
   // Override panel
+  const [balTeam, setBalTeam] = useState("");
   const [balDelta, setBalDelta] = useState("");
   const [balReason, setBalReason] = useState("");
   
@@ -86,7 +89,7 @@ export default function AdminPage() {
   const [resetConfirm, setResetConfirm] = useState(false);
   
   // Active tab
-  const [tab, setTab] = useState<"approvals" | "properties" | "overrides" | "log">("approvals");
+  const [tab, setTab] = useState<"approvals" | "properties" | "overrides" | "assignment" | "log">("approvals");
 
   const showToast = (msg: string, ok = true) => {
     setToast({ msg, ok });
@@ -101,10 +104,10 @@ export default function AdminPage() {
   }
 
   async function pushProperty() {
-    if (!gs?.myAssignedTeam || !propertySearch) return;
+    if (!pushTeam || !propertySearch) return;
     const found = gs ? Object.values(gs.properties).find((p) => p.name.toLowerCase().includes(propertySearch.toLowerCase())) : null;
     if (!found) { showToast("Property not found", false); return; }
-    const ok = await apiFetch("/api/admin/push", { teamId: gs.myAssignedTeam, propertyId: found.propertyId });
+    const ok = await apiFetch("/api/admin/push", { teamId: pushTeam, propertyId: found.propertyId });
     if (ok) { setPropertySearch(""); }
   }
 
@@ -114,13 +117,17 @@ export default function AdminPage() {
 
   async function editBalance() {
     const delta = parseFloat(balDelta);
-    if (!gs?.myAssignedTeam || isNaN(delta)) { showToast("Fill in amount", false); return; }
-    const ok = await apiFetch("/api/admin/balance", { teamId: gs.myAssignedTeam, delta, reason: balReason || "Manual adjustment" });
+    if (!balTeam || isNaN(delta)) { showToast("Fill in team and amount", false); return; }
+    const ok = await apiFetch("/api/admin/balance", { teamId: balTeam, delta, reason: balReason || "Manual adjustment" });
     if (ok) { setBalDelta(""); setBalReason(""); }
   }
 
   async function assignOwner() {
-    await apiFetch("/api/admin/property", { propertyId: ownerPropId, teamId: ownerTeamId ? gs?.myAssignedTeam : null });
+    await apiFetch("/api/admin/property", { propertyId: ownerPropId, teamId: ownerTeamId || null });
+  }
+
+  async function assignAdmin(adminId: string, teamId: string) {
+    await apiFetch("/api/admin/assignment", { adminId, teamId: teamId || null });
   }
 
   async function resetGame() {
@@ -133,26 +140,9 @@ export default function AdminPage() {
 
   async function logout() { await fetch("/api/auth/logout", { method: "POST" }); router.push("/"); }
 
-  if (!gs || (!gs.notAssigned && (!gs.teams || !gs.properties))) return (
+  if (!gs || !gs.teams || !gs.properties) return (
     <div className="min-h-screen flex items-center justify-center bg-[#fffef0]">
       <div className="w-8 h-8 border-4 border-[#3498db] border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
-
-  if (gs.notAssigned) return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-[#fffef0]">
-      <div className="text-center">
-        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center text-gray-400 mx-auto mb-4">
-          <Clock size={32} />
-        </div>
-        <h2 className="text-2xl font-black text-gray-800 mb-2">Awaiting Assignment</h2>
-        <p className="text-gray-500 font-bold max-w-sm mx-auto mb-6">
-          The super admin hasn't assigned you to a team yet. Please wait or contact them.
-        </p>
-        <button onClick={logout} className="px-6 py-2 bg-white border-2 border-gray-200 hover:bg-gray-50 rounded-lg shadow-sm font-bold text-gray-600 transition">
-          Log out
-        </button>
-      </div>
     </div>
   );
 
@@ -206,7 +196,7 @@ export default function AdminPage() {
               </div>
               <div className="flex items-center gap-2">
                 <h1 className="text-xl font-black tracking-widest text-[#2d3436]">HUMANOPOLY</h1>
-                <span className="px-2 py-0.5 rounded text-[10px] font-black tracking-wider text-white bg-gradient-to-r from-[#e63946] to-[#f1c40f]">TEAM ADMIN</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-black tracking-wider text-white bg-gradient-to-r from-[#e63946] to-[#f1c40f]">SUPER ADMIN</span>
               </div>
             </div>
 
@@ -280,9 +270,14 @@ export default function AdminPage() {
                 <h3 className="font-black text-gray-700 flex items-center gap-2">
                   <Home size={18} className="text-[#e63946]" /> Push Property
                 </h3>
-                <div className="w-full bg-gray-100 border-2 border-gray-200 rounded-lg px-3 py-2.5 font-bold text-gray-500 opacity-70">
-                  {gs.teams[gs.myAssignedTeam!]?.displayName}
-                </div>
+                <select
+                  value={pushTeam}
+                  onChange={(e) => setPushTeam(e.target.value)}
+                  className="w-full bg-gray-50 border-2 border-gray-200 rounded-lg px-3 py-2.5 font-bold text-gray-700 outline-none focus:border-[#3498db] transition-colors"
+                >
+                  <option value="">— Select Team —</option>
+                  {teams.map((t) => <option key={t.teamId} value={t.teamId}>{t.displayName}</option>)}
+                </select>
                 <div className="relative">
                   <Search size={16} className="absolute left-3 top-3 text-gray-400" />
                   <input
@@ -323,7 +318,7 @@ export default function AdminPage() {
                 })()}
 
                 <button
-                  disabled={!propertySearch}
+                  disabled={!pushTeam || !propertySearch}
                   onClick={pushProperty}
                   className="w-full mt-1 bg-gradient-to-r from-[#e63946] to-[#f1c40f] text-white py-3 rounded-xl font-black shadow-md hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed uppercase tracking-wide"
                 >
@@ -339,15 +334,15 @@ export default function AdminPage() {
                       return (
                          <button
                            key={t.teamId}
-                           onClick={() => apiFetch("/api/admin/push", { teamId: gs.myAssignedTeam!, clear: true })}
+                           onClick={() => apiFetch("/api/admin/push", { teamId: t.teamId, clear: true })}
                            className="bg-gray-100 hover:bg-red-50 hover:text-[#e63946] border-2 border-transparent hover:border-[#e63946]/30 text-gray-500 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
                          >
-                           <X size={12} /> Clear Push
+                           <X size={12} /> {t.displayName}
                          </button>
                       )
                     })}
-                    {!gs.currentPush[gs.myAssignedTeam!] && (
-                      <p className="text-xs text-gray-400 font-bold">No active push for your team.</p>
+                    {!teams.some((t) => gs.currentPush[t.teamId]) && (
+                      <p className="text-xs text-gray-400 font-bold">No active pushes.</p>
                     )}
                   </div>
                 </div>
@@ -359,7 +354,7 @@ export default function AdminPage() {
           {/* ── Tabs Navigation ── */}
           <div className="w-full mt-4">
              <div className="flex flex-wrap gap-2 bg-white border-2 border-gray-100 rounded-2xl p-1.5 w-fit shadow-sm">
-              {(["approvals", "properties", "overrides", "log"] as const).map((t) => (
+              {(["approvals", "properties", "overrides", "assignment", "log"] as const).map((t) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
@@ -520,8 +515,9 @@ export default function AdminPage() {
                   </h3>
                   <div>
                     <label className="text-xs text-gray-500 font-bold mb-1.5 block">Select Team</label>
-                    <select disabled className="w-full bg-gray-100 border-2 border-gray-200 rounded-xl px-4 py-3 font-bold text-gray-500 outline-none transition-colors opacity-70">
-                      <option>{gs.teams[gs.myAssignedTeam!]?.displayName} ({formatMoney(gs.teams[gs.myAssignedTeam!]?.balance ?? 0)})</option>
+                    <select value={balTeam} onChange={(e) => setBalTeam(e.target.value)} className="w-full bg-gray-50 border-2 border-gray-200 rounded-xl px-4 py-3 font-bold text-gray-700 outline-none focus:border-[#3498db] transition-colors">
+                      <option value="">— Choose team —</option>
+                      {teams.map((t) => <option key={t.teamId} value={t.teamId}>{t.displayName} ({formatMoney(t.balance)})</option>)}
                     </select>
                   </div>
                   <div>
@@ -552,8 +548,8 @@ export default function AdminPage() {
                   <div>
                     <label className="text-xs text-gray-500 font-bold mb-1.5 block">New Owner</label>
                     <select value={ownerTeamId} onChange={(e) => setOwnerTeamId(e.target.value)} className="w-full bg-gray-50 border-2 border-gray-200 rounded-xl px-4 py-3 font-bold text-gray-700 outline-none focus:border-[#3498db] transition-colors">
-                      <option value="false">— None (unassign my team) —</option>
-                      <option value="true">Assign to {gs.teams[gs.myAssignedTeam!]?.displayName}</option>
+                      <option value="">— None (clear owner) —</option>
+                      {teams.map((t) => <option key={t.teamId} value={t.teamId}>{t.displayName}</option>)}
                     </select>
                   </div>
                   <button disabled={!ownerPropId} onClick={assignOwner} className="w-full bg-gradient-to-r from-[#27ae60] to-[#2ecc71] hover:opacity-90 mt-auto text-white font-black py-3 rounded-xl transition shadow-md disabled:opacity-40 tracking-wide">
@@ -561,7 +557,73 @@ export default function AdminPage() {
                   </button>
                 </GradientCard>
 
+                {/* Danger Zone: Reset Game */}
+                <div className="md:col-span-2 border-4 border-dashed border-red-200 bg-red-50/50 rounded-2xl p-6 flex flex-col items-center justify-center text-center mt-4">
+                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center text-[#e63946] mb-4">
+                    <X size={32} strokeWidth={3} />
+                  </div>
+                  <h3 className="text-xl font-black text-[#e63946] mb-2 tracking-wide">Danger Zone: Reset Entire Game</h3>
+                  <p className="text-sm font-bold text-gray-500 max-w-md mb-6">This will wipe all game progress, balances, properties, and task states. The database will return to its initial seed. This cannot be undone.</p>
+                  
+                  {!resetConfirm ? (
+                    <button
+                      onClick={() => setResetConfirm(true)}
+                      className="bg-[#e63946] text-white hover:bg-red-700 font-black tracking-wide text-lg px-8 py-3 rounded-xl transition whitespace-nowrap shadow-md"
+                    >
+                      RESET GAME TO DEFAULT
+                    </button>
+                  ) : (
+                    <div className="flex flex-col items-center gap-3">
+                      <span className="text-lg text-[#e63946] font-black animate-pulse">Are you absolutely sure?</span>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={resetGame}
+                          className="bg-black text-red-500 hover:bg-red-600 hover:text-white border-2 border-red-500 font-black px-6 py-3 rounded-xl transition shadow-md tracking-widest"
+                        >
+                          YES, NUKE IT
+                        </button>
+                        <button
+                          onClick={() => setResetConfirm(false)}
+                          className="bg-gray-200 text-gray-600 hover:bg-gray-300 font-black px-6 py-3 rounded-xl transition"
+                        >
+                          CANCEL
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
+            {/* ASSIGNMENT TAB */}
+            {tab === "assignment" && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl">
+                <GradientCard innerClassName="p-6 flex flex-col gap-4">
+                  <h3 className="font-black text-gray-800 flex items-center gap-2 text-lg">
+                    <Users size={20} className="text-[#e63946]" /> Assign Team Admins
+                  </h3>
+                  <p className="text-sm font-bold text-gray-500">
+                    Map standard admin accounts (admin1-admin6) to specific playing teams. Once mapped, when the admin logs in, they will only be able to control their assigned team.
+                  </p>
+                  <div className="flex flex-col gap-3 mt-2">
+                    {["admin1", "admin2", "admin3", "admin4", "admin5", "admin6"].map((adminId) => {
+                       const assignedTeamId = gs.adminAssignments?.[adminId] || "";
+                       return (
+                        <div key={adminId} className="flex items-center justify-between gap-4 border-b-2 border-gray-50 pb-4 last:border-0 last:pb-0">
+                          <span className="font-black text-sm text-gray-700 uppercase tracking-widest bg-gray-100 px-3 py-1.5 rounded-lg">{adminId}</span>
+                          <select
+                            value={assignedTeamId}
+                            onChange={(e) => assignAdmin(adminId, e.target.value)}
+                            className="bg-gray-50 border-2 border-gray-200 rounded-lg px-4 py-2 font-bold text-sm text-gray-700 outline-none focus:border-[#3498db] transition-colors flex-1"
+                          >
+                            <option value="">— Unassigned —</option>
+                            {teams.map((t) => <option key={t.teamId} value={t.teamId}>{t.displayName}</option>)}
+                          </select>
+                        </div>
+                       )
+                    })}
+                  </div>
+                </GradientCard>
               </div>
             )}
 
