@@ -1,9 +1,10 @@
 // ─── Shared game types ────────────────────────────────────────────────────────
 // Single source of truth — imported by gameState.ts, admin/page.tsx, player/page.tsx
 
-export type PropertyStatus = "vacant" | "owned" | "locked";
+export type PropertyStatus = "vacant" | "owned";
 export type ApprovalType = "task_money" | "task_property" | "buy" | "rent";
 export type ApprovalStatus = "pending" | "approved" | "rejected";
+export type TransactionType = "purchase" | "rent" | "reward" | "manual";
 
 export interface PropertyState {
   propertyId: string;
@@ -11,41 +12,40 @@ export interface PropertyState {
   price: number;
   rent: number;
   owner: string | null;
-  status: string;
+  status: PropertyStatus;
 }
 
 export interface TeamState {
   teamId: string;
   displayName: string;
   balance: number;
-  ownedProperties: string[];
 }
 
 export interface CurrentPush {
   propertyId: string;
   taskId: number | null;
-  pushedAt: number;
+  pushedAt: string;
 }
 
 export interface PendingApproval {
   id: string;
-  type: string;
+  type: ApprovalType;
   teamId: string;
   propertyId: string;
   taskId?: number | null;
   amount: number;
-  timestamp: number;
-  status: string;
+  createdAt: string;
+  status: ApprovalStatus;
 }
 
 export interface Transaction {
   id: string;
-  type: string;
+  type: TransactionType;
   teamId: string;
   amount: number;
   propertyId?: string | null;
   description: string;
-  timestamp: number;
+  createdAt: string;
 }
 
 export interface Task {

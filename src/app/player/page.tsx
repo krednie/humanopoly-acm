@@ -6,11 +6,11 @@ import { useGamePoller } from "@/lib/useGamePoller";
 import { Dice6, LogOut, Home } from "lucide-react";
 
 // ─── Player-page-specific types ───────────────────────────────────────────────
-interface PushDetail { property: PropertyState; task: Task | null; pushedAt: number; }
+interface PushDetail { property: PropertyState; task: Task | null; pushedAt: string; }
 interface LeaderboardEntry { teamId: string; displayName: string; balance: number; netWorth: number; }
 
 interface PlayerState {
-  team: TeamState;
+  team: TeamState & { ownedProperties: string[] };
   push: PushDetail | null;
   pendingApprovals: PendingApproval[];
   transactions: Transaction[];
@@ -37,8 +37,8 @@ const GradientCard = ({
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatMoney(n: number) { return `₮${n.toLocaleString()}`; }
-function timeAgo(ts: number) {
-  const diff = Math.floor((Date.now() - ts) / 1000);
+function timeAgo(ts: string) {
+  const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
   if (diff < 60) return `${diff}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   return `${Math.floor(diff / 3600)}h ago`;
@@ -147,7 +147,7 @@ function VacantPropertyActions({
 interface RentActionProps {
   prop: PropertyState;
   team: TeamState;
-  pushedAt: number;
+  pushedAt: string;
   transactions: Transaction[];
   actionLoading: boolean;
   hasPendingFor: (type: string, propId: string) => boolean;
@@ -156,7 +156,7 @@ interface RentActionProps {
 
 function RentAction({ prop, team, pushedAt, transactions, actionLoading, hasPendingFor, onSubmit }: RentActionProps) {
   const hasPaidRent = transactions.some(
-    (tx) => tx.type === "rent" && tx.propertyId === prop.propertyId && tx.timestamp >= pushedAt
+    (tx) => tx.type === "rent" && tx.propertyId === prop.propertyId && tx.createdAt >= pushedAt
   );
   return (
     <button
@@ -441,7 +441,7 @@ export default function PlayerPage() {
                       <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: isPos ? "#27ae60" : "#e63946" }} />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-[#2d3436] truncate">{tx.description}</p>
-                        <p className="text-xs font-bold text-gray-400">{timeAgo(tx.timestamp)}</p>
+                        <p className="text-xs font-bold text-gray-400">{timeAgo(tx.createdAt)}</p>
                       </div>
                       <span className={`text-sm font-black tabular-nums ${isPos ? "text-[#27ae60]" : "text-[#e63946]"}`}>
                         {isPos ? "+" : ""}{formatMoney(tx.amount)}

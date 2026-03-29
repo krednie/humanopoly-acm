@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 interface UseGamePollerOptions {
@@ -17,18 +17,24 @@ export function useGamePoller<T>(route: string, options: UseGamePollerOptions = 
   const router = useRouter();
   const [state, setState] = useState<T | null>(null);
 
+  // Store callback in a ref so it never causes useCallback/useEffect to re-run
+  const onFirstLoadRef = useRef(onFirstLoad);
+  onFirstLoadRef.current = onFirstLoad;
+  const loadedRef = useRef(false);
+
   const fetchState = useCallback(async () => {
     try {
       const res = await fetch(`${route}?t=${Date.now()}`);
       if (res.status === 401) { router.push("/"); return; }
       if (!res.ok) return;
       const data: T = await res.json();
-      setState((prev) => {
-        if (prev === null && onFirstLoad) onFirstLoad();
-        return data;
-      });
+      setState(data);
+      if (!loadedRef.current) {
+        loadedRef.current = true;
+        onFirstLoadRef.current?.();
+      }
     } catch { /* network errors are silently ignored during polling */ }
-  }, [route, router, onFirstLoad]);
+  }, [route, router]);
 
   useEffect(() => {
     fetchState();

@@ -1,48 +1,78 @@
-import { pgTable, text, integer, jsonb } from "drizzle-orm/pg-core";
+import {
+  pgTable, pgEnum, text, integer, uuid,
+  timestamp, index,
+} from "drizzle-orm/pg-core";
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+export const propertyStatusEnum = pgEnum("property_status", ["vacant", "owned"]);
+export const approvalTypeEnum = pgEnum("approval_type", ["buy", "rent", "task_money", "task_property"]);
+export const approvalStatusEnum = pgEnum("approval_status", ["pending", "approved", "rejected"]);
+export const transactionTypeEnum = pgEnum("transaction_type", ["purchase", "rent", "reward", "manual"]);
+
+// ─── Teams ────────────────────────────────────────────────────────────────────
 
 export const teamsState = pgTable("teams_state", {
   teamId: text("team_id").primaryKey(),
   displayName: text("display_name").notNull(),
   balance: integer("balance").notNull().default(1500),
-  ownedProperties: jsonb("owned_properties").$type<string[]>().notNull().default([]),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// ─── Properties ───────────────────────────────────────────────────────────────
 
 export const propertiesState = pgTable("properties_state", {
   propertyId: text("property_id").primaryKey(),
   name: text("name").notNull(),
   price: integer("price").notNull(),
   rent: integer("rent").notNull(),
-  owner: text("owner"),
-  status: text("status").notNull().default("vacant"),
-});
+  owner: text("owner").references(() => teamsState.teamId),
+  status: propertyStatusEnum("status").notNull().default("vacant"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_properties_owner").on(table.owner),
+]);
+
+// ─── Current Push ─────────────────────────────────────────────────────────────
 
 export const currentPush = pgTable("current_push", {
-  teamId: text("team_id").primaryKey(),
-  propertyId: text("property_id").notNull(),
+  teamId: text("team_id").primaryKey().references(() => teamsState.teamId),
+  propertyId: text("property_id").notNull().references(() => propertiesState.propertyId),
   taskId: integer("task_id"),
-  pushedAt: integer("pushed_at").notNull(),
+  pushedAt: timestamp("pushed_at").defaultNow().notNull(),
 });
+
+// ─── Pending Approvals ───────────────────────────────────────────────────────
 
 export const pendingApprovals = pgTable("pending_approvals", {
-  id: text("id").primaryKey(),
-  type: text("type").notNull(),
-  teamId: text("team_id").notNull(),
-  propertyId: text("property_id").notNull(),
+  id: uuid("id").primaryKey().defaultRandom(),
+  type: approvalTypeEnum("type").notNull(),
+  teamId: text("team_id").notNull().references(() => teamsState.teamId),
+  propertyId: text("property_id").notNull().references(() => propertiesState.propertyId),
   taskId: integer("task_id"),
   amount: integer("amount").notNull().default(0),
-  status: text("status").notNull().default("pending"),
-  timestamp: integer("timestamp").notNull(),
-});
+  status: approvalStatusEnum("status").notNull().default("pending"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_approvals_team_status").on(table.teamId, table.status),
+]);
+
+// ─── Transactions ─────────────────────────────────────────────────────────────
 
 export const transactions = pgTable("transactions", {
-  id: text("id").primaryKey(),
-  type: text("type").notNull(),
-  teamId: text("team_id").notNull(),
+  id: uuid("id").primaryKey().defaultRandom(),
+  type: transactionTypeEnum("type").notNull(),
+  teamId: text("team_id").notNull().references(() => teamsState.teamId),
   amount: integer("amount").notNull(),
-  propertyId: text("property_id"),
+  propertyId: text("property_id").references(() => propertiesState.propertyId),
   description: text("description").notNull(),
-  timestamp: integer("timestamp").notNull(),
-});
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_transactions_team").on(table.teamId),
+]);
+
+// ─── Task Usage ───────────────────────────────────────────────────────────────
 
 export const taskUsage = pgTable("task_usage", {
   taskId: integer("task_id").primaryKey(),

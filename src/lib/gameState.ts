@@ -19,14 +19,18 @@ import type {
 } from "./types";
 
 export type { PropertyStatus, ApprovalType, PropertyState, TeamState, CurrentPush, PendingApproval, Transaction };
-
-// ─── Re-exported from @/lib/types ────────────────────────────────────────────
 export type { ApprovalStatus } from "./types";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function uid(): string {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+/** Derive owned property IDs for a team from the properties table */
+function deriveOwnedProperties(
+  properties: Record<string, PropertyState>,
+  teamId: string
+): string[] {
+  return Object.values(properties)
+    .filter((p) => p.owner === teamId)
+    .map((p) => p.propertyId);
 }
 
 async function pickTask(): Promise<number | null> {
@@ -37,7 +41,7 @@ async function pickTask(): Promise<number | null> {
 // ─── Seed / Reset ─────────────────────────────────────────────────────────────
 
 export async function seedDatabase(): Promise<void> {
-  _seeded = false; // reset flag so ensureSeeded re-validates after this
+  _seeded = false;
   await db.delete(transactions);
   await db.delete(pendingApprovals);
   await db.delete(currentPush);
@@ -49,7 +53,7 @@ export async function seedDatabase(): Promise<void> {
     if (c.role === "player") {
       await db.insert(teamsState).values({
         teamId: c.teamId, displayName: c.displayName,
-        balance: c.startingBalance, ownedProperties: [],
+        balance: c.startingBalance,
       });
     }
   }
@@ -64,7 +68,6 @@ export async function seedDatabase(): Promise<void> {
   }
 }
 
-// Module-level flag — avoids a DB round-trip on every poll after first seed
 let _seeded = false;
 
 export async function ensureSeeded(): Promise<void> {
@@ -82,26 +85,43 @@ export async function getAdminState() {
     db.select().from(teamsState),
     db.select().from(propertiesState),
     db.select().from(currentPush),
-    db.select().from(pendingApprovals).orderBy(desc(pendingApprovals.timestamp)).limit(200),
-    db.select().from(transactions).orderBy(desc(transactions.timestamp)).limit(200),
+    db.select().from(pendingApprovals).orderBy(desc(pendingApprovals.createdAt)).limit(200),
+    db.select().from(transactions).orderBy(desc(transactions.createdAt)).limit(200),
   ]);
-
-  const teamsRecord: Record<string, TeamState> = {};
-  for (const t of teams) teamsRecord[t.teamId] = { ...t, ownedProperties: (t.ownedProperties as string[]) ?? [] };
 
   const propertiesRecord: Record<string, PropertyState> = {};
   for (const p of properties) propertiesRecord[p.propertyId] = p as PropertyState;
 
+  const teamsRecord: Record<string, TeamState & { ownedProperties: string[] }> = {};
+  for (const t of teams) {
+    teamsRecord[t.teamId] = {
+      ...t,
+      ownedProperties: deriveOwnedProperties(propertiesRecord, t.teamId),
+    };
+  }
+
   const pushRecord: Record<string, CurrentPush | null> = {};
   for (const teamId of Object.keys(teamsRecord)) pushRecord[teamId] = null;
-  for (const push of pushes) pushRecord[push.teamId] = { propertyId: push.propertyId, taskId: push.taskId, pushedAt: push.pushedAt };
+  for (const push of pushes) {
+    pushRecord[push.teamId] = {
+      propertyId: push.propertyId,
+      taskId: push.taskId,
+      pushedAt: push.pushedAt.toISOString(),
+    };
+  }
 
   return {
     teams: teamsRecord,
     properties: propertiesRecord,
     currentPush: pushRecord,
-    pendingApprovals: approvals as PendingApproval[],
-    transactions: txs as Transaction[],
+    pendingApprovals: approvals.map((a) => ({
+      ...a,
+      createdAt: a.createdAt.toISOString(),
+    })) as PendingApproval[],
+    transactions: txs.map((tx) => ({
+      ...tx,
+      createdAt: tx.createdAt.toISOString(),
+    })) as Transaction[],
     tasks: TASKS,
   };
 }
@@ -118,7 +138,7 @@ export async function getPlayerState(teamId: string) {
       and(eq(pendingApprovals.teamId, teamId), eq(pendingApprovals.status, "pending"))
     ),
     db.select().from(transactions).where(eq(transactions.teamId, teamId))
-      .orderBy(desc(transactions.timestamp)).limit(30),
+      .orderBy(desc(transactions.createdAt)).limit(30),
     db.select().from(teamsState),
   ]);
 
@@ -128,9 +148,11 @@ export async function getPlayerState(teamId: string) {
   const propertiesRecord: Record<string, PropertyState> = {};
   for (const p of properties) propertiesRecord[p.propertyId] = p as PropertyState;
 
+  const myOwnedProperties = deriveOwnedProperties(propertiesRecord, teamId);
+
   const leaderboard = allTeams.map((t) => {
-    const propValue = ((t.ownedProperties as string[]) ?? [])
-      .reduce((sum, pid) => sum + (propertiesRecord[pid]?.price ?? 0), 0);
+    const teamProps = deriveOwnedProperties(propertiesRecord, t.teamId);
+    const propValue = teamProps.reduce((sum, pid) => sum + (propertiesRecord[pid]?.price ?? 0), 0);
     return { teamId: t.teamId, displayName: t.displayName, balance: t.balance, netWorth: t.balance + propValue };
   }).sort((a, b) => b.netWorth - a.netWorth);
 
@@ -139,14 +161,20 @@ export async function getPlayerState(teamId: string) {
   if (myPush) {
     const prop = propertiesRecord[myPush.propertyId];
     const task = myPush.taskId ? TASKS.find((t) => t.taskId === myPush.taskId) ?? null : null;
-    pushDetail = { property: prop, task, pushedAt: myPush.pushedAt };
+    pushDetail = { property: prop, task, pushedAt: myPush.pushedAt.toISOString() };
   }
 
   return {
-    team: { ...myTeam, ownedProperties: (myTeam.ownedProperties as string[]) ?? [] },
+    team: { ...myTeam, ownedProperties: myOwnedProperties },
     push: pushDetail,
-    pendingApprovals: myPending as PendingApproval[],
-    transactions: myTx as Transaction[],
+    pendingApprovals: myPending.map((a) => ({
+      ...a,
+      createdAt: a.createdAt.toISOString(),
+    })) as PendingApproval[],
+    transactions: myTx.map((tx) => ({
+      ...tx,
+      createdAt: tx.createdAt.toISOString(),
+    })) as Transaction[],
     leaderboard,
     properties: propertiesRecord,
   };
@@ -162,9 +190,8 @@ export async function pushProperty(teamId: string, propertyId: string): Promise<
 
   const taskId = prop[0].status === "vacant" ? await pickTask() : null;
 
-  const now = Math.floor(Date.now() / 1000);
-  await db.insert(currentPush).values({ teamId, propertyId, taskId, pushedAt: now })
-    .onConflictDoUpdate({ target: currentPush.teamId, set: { propertyId, taskId, pushedAt: now } });
+  await db.insert(currentPush).values({ teamId, propertyId, taskId })
+    .onConflictDoUpdate({ target: currentPush.teamId, set: { propertyId, taskId } });
   return { ok: true };
 }
 
@@ -206,15 +233,13 @@ export async function submitRequest(
     amount = prop.price;
   }
 
-  const id = uid();
-  await db.insert(pendingApprovals).values({
-    id, type, teamId, propertyId, taskId: taskId ?? null,
-    amount, status: "pending", timestamp: Math.floor(Date.now() / 1000),
-  });
-  
+  const [inserted] = await db.insert(pendingApprovals).values({
+    type, teamId, propertyId, taskId: taskId ?? null, amount, status: "pending",
+  }).returning({ id: pendingApprovals.id });
+
   await clearPush(teamId);
 
-  return { ok: true, id };
+  return { ok: true, id: inserted.id };
 }
 
 // ─── Admin: Process approval ──────────────────────────────────────────────────
@@ -227,18 +252,15 @@ export async function processApproval(
   if (!a) return { ok: false, error: "Approval not found" };
   if (a.status !== "pending") return { ok: false, error: "Already processed" };
 
-  // Reject: write immediately and return
   if (decision !== "approve") {
     await db.update(pendingApprovals).set({ status: "rejected" }).where(eq(pendingApprovals.id, approvalId));
     return { ok: true };
   }
 
-  // Task approvals: no balance risk, write approved immediately
+  // Task approvals: no balance risk
   if (a.type === "task_property" || a.type === "task_money") {
     await db.update(pendingApprovals).set({ status: "approved" }).where(eq(pendingApprovals.id, approvalId));
   }
-  // buy/rent: status will be written per-branch AFTER balance validation to avoid a brief approved→rejected state
-
 
   const [teamRows, propRows] = await Promise.all([
     db.select().from(teamsState).where(eq(teamsState.teamId, a.teamId)).limit(1),
@@ -246,9 +268,6 @@ export async function processApproval(
   ]);
   const team = teamRows[0]; const prop = propRows[0];
   if (!team || !prop) return { ok: false, error: "State inconsistency" };
-
-  const txId = uid();
-  const now = Math.floor(Date.now() / 1000);
 
   if (a.type === "task_property" || a.type === "task_money") {
     if (a.taskId != null) {
@@ -259,37 +278,32 @@ export async function processApproval(
         await db.update(taskUsage).set({ uses: (usageRow[0]?.uses ?? 0) + 1 }).where(eq(taskUsage.taskId, a.taskId));
       }
     }
-    
+
     if (a.type === "task_property") {
-      const newOwned = [...((team.ownedProperties as string[]) ?? []), a.propertyId];
       await Promise.all([
-        db.update(teamsState).set({ ownedProperties: newOwned }).where(eq(teamsState.teamId, a.teamId)),
         db.update(propertiesState).set({ owner: a.teamId, status: "owned" }).where(eq(propertiesState.propertyId, a.propertyId)),
-        db.insert(transactions).values({ id: txId, type: "reward", teamId: a.teamId, amount: 0, propertyId: a.propertyId, description: `Task completed on ${prop.name} (Earned property)`, timestamp: now }),
+        db.insert(transactions).values({ type: "reward", teamId: a.teamId, amount: 0, propertyId: a.propertyId, description: `Task completed on ${prop.name} (Earned property)` }),
       ]);
     } else {
       await Promise.all([
         db.update(teamsState).set({ balance: team.balance + a.amount }).where(eq(teamsState.teamId, a.teamId)),
-        db.insert(transactions).values({ id: txId, type: "reward", teamId: a.teamId, amount: a.amount, propertyId: a.propertyId, description: `Task completed on ${prop.name} (Earned money)`, timestamp: now }),
+        db.insert(transactions).values({ type: "reward", teamId: a.teamId, amount: a.amount, propertyId: a.propertyId, description: `Task completed on ${prop.name} (Earned money)` }),
       ]);
     }
 
   } else if (a.type === "buy") {
-    // Validate balance BEFORE writing the approved status
     if (team.balance < a.amount) {
       await db.update(pendingApprovals).set({ status: "rejected" }).where(eq(pendingApprovals.id, approvalId));
       return { ok: false, error: "Insufficient balance at time of approval" };
     }
     await db.update(pendingApprovals).set({ status: "approved" }).where(eq(pendingApprovals.id, approvalId));
-    const newOwned = [...((team.ownedProperties as string[]) ?? []), a.propertyId];
     await Promise.all([
-      db.update(teamsState).set({ balance: team.balance - a.amount, ownedProperties: newOwned }).where(eq(teamsState.teamId, a.teamId)),
+      db.update(teamsState).set({ balance: team.balance - a.amount }).where(eq(teamsState.teamId, a.teamId)),
       db.update(propertiesState).set({ owner: a.teamId, status: "owned" }).where(eq(propertiesState.propertyId, a.propertyId)),
-      db.insert(transactions).values({ id: txId, type: "purchase", teamId: a.teamId, amount: -a.amount, propertyId: a.propertyId, description: `Bought ${prop.name}`, timestamp: now }),
+      db.insert(transactions).values({ type: "purchase", teamId: a.teamId, amount: -a.amount, propertyId: a.propertyId, description: `Bought ${prop.name}` }),
     ]);
 
   } else if (a.type === "rent") {
-    // Validate balance BEFORE writing the approved status
     if (team.balance < a.amount) {
       await db.update(pendingApprovals).set({ status: "rejected" }).where(eq(pendingApprovals.id, approvalId));
       return { ok: false, error: "Insufficient balance at time of approval" };
@@ -302,8 +316,8 @@ export async function processApproval(
     await Promise.all([
       db.update(teamsState).set({ balance: team.balance - a.amount }).where(eq(teamsState.teamId, a.teamId)),
       db.update(teamsState).set({ balance: owner.balance + a.amount }).where(eq(teamsState.teamId, prop.owner)),
-      db.insert(transactions).values({ id: txId, type: "rent", teamId: a.teamId, amount: -a.amount, propertyId: a.propertyId, description: `Paid rent on ${prop.name}`, timestamp: now }),
-      db.insert(transactions).values({ id: uid(), type: "rent", teamId: prop.owner, amount: a.amount, propertyId: a.propertyId, description: `Received rent from ${team.displayName} on ${prop.name}`, timestamp: now }),
+      db.insert(transactions).values({ type: "rent", teamId: a.teamId, amount: -a.amount, propertyId: a.propertyId, description: `Paid rent on ${prop.name}` }),
+      db.insert(transactions).values({ type: "rent", teamId: prop.owner, amount: a.amount, propertyId: a.propertyId, description: `Received rent from ${team.displayName} on ${prop.name}` }),
     ]);
   }
 
@@ -318,7 +332,7 @@ export async function editBalance(teamId: string, delta: number, reason: string)
   if (!team) return { ok: false, error: "Team not found" };
   await Promise.all([
     db.update(teamsState).set({ balance: team.balance + delta }).where(eq(teamsState.teamId, teamId)),
-    db.insert(transactions).values({ id: uid(), type: "manual", teamId, amount: delta, description: reason || "Manual adjustment", timestamp: Math.floor(Date.now() / 1000) }),
+    db.insert(transactions).values({ type: "manual", teamId, amount: delta, description: reason || "Manual adjustment" }),
   ]);
   return { ok: true };
 }
@@ -330,25 +344,10 @@ export async function assignProperty(propertyId: string, teamId: string | null):
   const prop = propRows[0];
   if (!prop) return { ok: false, error: "Property not found" };
 
-  if (prop.owner) {
-    const oldOwnerRows = await db.select().from(teamsState).where(eq(teamsState.teamId, prop.owner)).limit(1);
-    const oldOwner = oldOwnerRows[0];
-    if (oldOwner) {
-      const updated = ((oldOwner.ownedProperties as string[]) ?? []).filter((id) => id !== propertyId);
-      await db.update(teamsState).set({ ownedProperties: updated }).where(eq(teamsState.teamId, prop.owner));
-    }
-  }
-
   if (teamId) {
     const newOwnerRows = await db.select().from(teamsState).where(eq(teamsState.teamId, teamId)).limit(1);
-    const newOwner = newOwnerRows[0];
-    if (!newOwner) return { ok: false, error: "Team not found" };
-    const updated = [...((newOwner.ownedProperties as string[]) ?? [])];
-    if (!updated.includes(propertyId)) updated.push(propertyId);
-    await Promise.all([
-      db.update(teamsState).set({ ownedProperties: updated }).where(eq(teamsState.teamId, teamId)),
-      db.update(propertiesState).set({ owner: teamId, status: "owned" }).where(eq(propertiesState.propertyId, propertyId)),
-    ]);
+    if (!newOwnerRows[0]) return { ok: false, error: "Team not found" };
+    await db.update(propertiesState).set({ owner: teamId, status: "owned" }).where(eq(propertiesState.propertyId, propertyId));
   } else {
     await db.update(propertiesState).set({ owner: null, status: "vacant" }).where(eq(propertiesState.propertyId, propertyId));
   }

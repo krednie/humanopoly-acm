@@ -37,9 +37,9 @@ function getTeamColor(rank: number) {
 
 // ─── Admin-only shape ─────────────────────────────────────────────────────────
 interface GameState {
-  teams: Record<string, TeamState>;
+  teams: Record<string, TeamState & { ownedProperties: string[] }>;
   properties: Record<string, PropertyState>;
-  currentPush: Record<string, { propertyId: string; taskId: number | null; pushedAt: number } | null>;
+  currentPush: Record<string, { propertyId: string; taskId: number | null; pushedAt: string } | null>;
   pendingApprovals: PendingApproval[];
   transactions: Transaction[];
   taskUsage: Record<number, number>;
@@ -47,8 +47,8 @@ interface GameState {
 }
 
 function formatMoney(n: number) { return `₮${n.toLocaleString()}`; }
-function timeAgo(ts: number) {
-  const diff = Math.floor((Date.now() - ts) / 1000);
+function timeAgo(ts: string) {
+  const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
   if (diff < 60) return `${diff}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   return `${Math.floor(diff / 3600)}h ago`;
@@ -389,7 +389,7 @@ export default function AdminPage() {
                             <span className="px-3 py-1 text-xs font-black rounded-md tracking-wider shadow-sm uppercase" style={{ backgroundColor: badge.bg, color: badge.text }}>
                               {a.type}
                             </span>
-                            <span className="text-sm font-bold text-gray-400">{timeAgo(a.timestamp)}</span>
+                            <span className="text-sm font-bold text-gray-400">{timeAgo(a.createdAt)}</span>
                           </div>
                           
                           <div className="flex items-center gap-4">
@@ -485,8 +485,7 @@ export default function AdminPage() {
                             </td>
                             <td className="px-4 py-4">
                               <span className={`text-[10px] px-2.5 py-1 rounded-md font-black uppercase tracking-wider ${
-                                p.status === "owned" ? "bg-green-100 text-[#27ae60]" :
-                                p.status === "locked" ? "bg-yellow-100 text-[#f1c40f]" : "bg-gray-100 text-gray-500"
+                                p.status === "owned" ? "bg-green-100 text-[#27ae60]" : "bg-gray-100 text-gray-500"
                               }`}>{p.status}</span>
                             </td>
                           </tr>
@@ -604,7 +603,7 @@ export default function AdminPage() {
                         <div className="w-2.5 h-2.5 rounded-full mt-1.5 flex-shrink-0" style={{ backgroundColor: isPositive ? '#27ae60' : '#e63946' }}></div>
                         <div className="flex-1">
                           <span className="font-bold text-gray-800 block leading-tight">{gs.teams[tx.teamId]?.displayName ?? tx.teamId} <span className="text-gray-500 font-semibold">— {tx.description}</span></span>
-                          <span className="text-xs font-bold text-gray-400 mt-0.5 inline-block">{timeAgo(tx.timestamp)}</span>
+                          <span className="text-xs font-bold text-gray-400 mt-0.5 inline-block">{timeAgo(tx.createdAt)}</span>
                         </div>
                         <div className={`font-black tracking-wide ${isPositive ? "text-[#27ae60]" : "text-[#e63946]"}`}>
                           {isPositive ? "+" : ""}{formatMoney(tx.amount)}
