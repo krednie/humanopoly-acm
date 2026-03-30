@@ -181,6 +181,38 @@ export async function getTeamAdminState(teamId: string) {
   };
 }
 
+//TEAM NAME//
+export async function updateTeamName(
+  teamId: string,
+  displayName: string
+): Promise<{ ok: boolean; error?: string }> {
+  await ensureSeeded();
+
+  if (!displayName || !displayName.trim()) {
+    return { ok: false, error: "Invalid name" };
+  }
+
+  const team = await db
+    .select()
+    .from(teamsState)
+    .where(eq(teamsState.teamId, teamId))
+    .limit(1);
+
+  if (!team[0]) {
+    return { ok: false, error: "Team not found" };
+  }
+
+  await db
+    .update(teamsState)
+    .set({
+      displayName: displayName.trim(),
+      updatedAt: new Date(), // yes this matters
+    })
+    .where(eq(teamsState.teamId, teamId));
+
+  return { ok: true };
+}
+
 // ─── Read: Player state ───────────────────────────────────────────────────────
 
 export async function getPlayerState(teamId: string) {

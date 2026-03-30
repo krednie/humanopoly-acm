@@ -81,6 +81,9 @@ export default function AdminPage() {
   const [balDelta, setBalDelta] = useState("");
   const [balReason, setBalReason] = useState("");
   
+  //Team Name
+  const [teamNames, setTeamNames] = useState<Record<string, string>>({});
+
   // Assign owner panel
   const [ownerPropId, setOwnerPropId] = useState("");
   const [ownerTeamId, setOwnerTeamId] = useState("");
@@ -137,6 +140,13 @@ export default function AdminPage() {
     else { showToast("Game reset ✓"); fetchState(); }
     setResetConfirm(false);
   }
+
+  async function updateTeamNameApi(teamId: string, displayName: string) {
+  await apiFetch("/api/admin/team", {
+    teamId,
+    displayName,
+  });
+}
 
   async function logout() { await fetch("/api/auth/logout", { method: "POST" }); router.push("/"); }
 
@@ -624,6 +634,52 @@ export default function AdminPage() {
                     })}
                   </div>
                 </GradientCard>
+                {/* ─── Edit Team Names ─── */}
+        <GradientCard innerClassName="p-6 flex flex-col gap-4">
+  <h3 className="font-black text-gray-800 flex items-center gap-2 text-lg">
+    ✏️ Edit Team Names
+  </h3>
+
+  <p className="text-sm font-bold text-gray-500">
+    Change how team names appear across the game.
+  </p>
+
+  <div className="flex flex-col gap-3 mt-2">
+    {teams.map((t) => (
+      <div
+        key={t.teamId}
+        className="flex items-center justify-between gap-4 border-b-2 border-gray-50 pb-4 last:border-0 last:pb-0"
+      >
+        <span className="text-xs font-black text-gray-400 w-24">
+          {t.teamId}
+        </span>
+
+        <input
+          value={teamNames[t.teamId] ?? t.displayName}
+          onChange={(e) =>
+            setTeamNames((prev) => ({
+              ...prev,
+              [t.teamId]: e.target.value,
+            }))
+          }
+          className="flex-1 bg-gray-50 border-2 border-gray-200 rounded-lg px-4 py-2 font-bold text-sm text-gray-700 outline-none focus:border-[#3498db]"
+        />
+
+        <button
+          onClick={() =>
+            updateTeamNameApi(
+              t.teamId,
+              teamNames[t.teamId] ?? t.displayName
+            )
+          }
+          className="bg-[#27ae60] text-white px-4 py-2 rounded-lg text-xs font-black hover:opacity-90"
+        >
+          Save
+        </button>
+      </div>
+    ))}
+  </div>
+</GradientCard>
               </div>
             )}
 
